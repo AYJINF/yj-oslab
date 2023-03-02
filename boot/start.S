@@ -12,7 +12,10 @@ _start:
   outb %al, $0x92
   lgdt gdt_desc  # loading gdt
 
-  # TODO: Lab1-2, set the lowest bit of cr0
+  # TODO(DONE): Lab1-2, set the lowest bit of cr0 CR0寄存器最低位置1，开启保护模式
+  movl %cr0, %eax
+  orb $0x1, %al
+  movl %eax, %cr0
 
   ljmp $0x08, $start32 # reload code segment selector and ljmp to start32
 
@@ -40,9 +43,13 @@ gdt: # 8 bytes for each table entry, at least 1 entry
   .word 0, 0
   .byte 0, 0, 0, 0
 
-  # TODO: Lab1-2, code segment entry
+  # TODO(DONE): Lab1-2, code segment entry 代码段
+  .word 0xffff, 0  # 0-1字节段限长为全1，2-3字节段基址为0
+  .byte 0, 0x9a, 0xcf, 0
 
-  # TODO: Lab1-2, data segment entry
+  # TODO(DONE): Lab1-2, data segment entry 数据段
+  .word 0xffff, 0  # 0-1字节段限长为全1，2-3字节段基址为0
+  .byte 0, 0x92, 0xcf, 0
 
 gdt_desc: # 6 bytes in total
   .word (gdt_desc - gdt - 1) # sizeof(gdt) - 1
