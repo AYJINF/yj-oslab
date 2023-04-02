@@ -2,10 +2,10 @@
 
 default: all
 
-.PHONY: clean clean-all clean-fs all qemu qemu-gdb gdb print-gdbport grade submit
+.PHONY: clean clean-all clean-fs all qemu qemu-gdb gdb print-gdbport grade submit pack
 
 # REMEMBER TO MAKE CLEAN AFTER CHANGE ME!
-STAGE  := phase1
+STAGE  := phase2
 STAGES := phase1 phase2 phase3 phase4 phase5 phase6
 
 ifeq ($(filter $(STAGES), $(STAGE)), ) # STAGE must be valid
@@ -51,6 +51,10 @@ grade:
 
 submit:
 	python3 ok --config okconfig/$(STAGE).ok --submit
+
+pack:
+	mkdir -p build/submit
+	python3 ok --config okconfig/$(STAGE).ok --pack build/submit
 
 # Bootloader
 

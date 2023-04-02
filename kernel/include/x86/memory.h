@@ -111,10 +111,10 @@ typedef union PageDirectoryEntry {
     uint32_t page_cache_disable : 1;
     uint32_t accessed : 1;
     uint32_t pad0 : 6;
-    uint32_t page_frame : 20;
+    uint32_t page_frame : 20; // 页框号
   };
   uint32_t val;
-} PDE;
+} PDE; // PDE结构体
 
 typedef struct PageDirectory {
   PDE pde[NR_PDE] PG_ALIGN;
@@ -136,7 +136,7 @@ typedef union PageTableEntry {
     uint32_t page_frame : 20;
   };
   uint32_t val;
-} PTE;
+} PTE;; // PTE结构体
 
 typedef struct PageTable {
   PTE pte[NR_PTE] PG_ALIGN;
