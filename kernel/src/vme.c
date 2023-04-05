@@ -30,14 +30,21 @@ typedef union free_page {
 page_t *free_page_list;
 
 // 设置addr对应的pte的P位 not sure
-void set_pte_P(void *addr, uint32_t p){
-  void *ad = addr;
-  uint32_t free_p_dir = ADDR2DIR(ad);
-  uint32_t free_p_tbl = ADDR2TBL(ad);
-  // Log("dir=%u, tbl=%u\n", free_p_dir, free_p_tbl);
-  kpt[free_p_dir].pte[free_p_tbl].present &= 0; // not sure
-  kpt[free_p_dir].pte[free_p_tbl].present |= p;
-  // Log("present=%x, val=%x\n", kpt[free_p_dir].pte[free_p_tbl].present, kpt[free_p_dir].pte[free_p_tbl].val);
+// void set_pte_P(void *addr, uint32_t p){
+//   void *ad = addr;
+//   uint32_t free_p_dir = ADDR2DIR(ad);
+//   uint32_t free_p_tbl = ADDR2TBL(ad);
+//   // Log("dir=%u, tbl=%u\n", free_p_dir, free_p_tbl);
+//   kpt[free_p_dir].pte[free_p_tbl].present &= 0; // not sure
+//   kpt[free_p_dir].pte[free_p_tbl].present |= p;
+//   // Log("present=%x, val=%x\n", kpt[free_p_dir].pte[free_p_tbl].present, kpt[free_p_dir].pte[free_p_tbl].val);
+//   set_cr3(vm_curr());
+// }
+
+// 设置pte的p位
+void set_pte_p(PTE *pte, uint32_t p){
+  pte->present &= 0;
+  pte->present |= p;
   set_cr3(vm_curr());
 }
 
@@ -76,24 +83,29 @@ void init_page() {
     free_pages = new_page;
     // page_number++;
   }
-  // Log("free_pages=%p\n", free_pages);
-  // free_pages->next =NULL;
+  free_pages->next = NULL;
   // Log("page_number=%u\n", page_number);
 }
 
 // Lab1-4: 分配一页（4KiB）内存并返回其地址，要求分配出的内存按页对齐
 void *kalloc() {
   // TODO();
+  // Log("kalloc %x------>%x\n", free_page_list, free_page_list->next);
   if(free_page_list == NULL){
     Log("There are no free pages!\n");
     assert(0);
   }
   void *ret = free_page_list;
   free_page_list = free_page_list->next;
+  // Log("before %x------>%x\n", free_page_list, free_page_list->next);
   memset(ret, 0, PGSIZE);
+  // Log("afterr %x------>%x\n", free_page_list, free_page_list->next);
+  // Log("ret %x\n", ret);
 
   //将对应pte的P位设置为1 not sure
-  set_pte_P((void *)ret, 1);
+  // set_pte_P((void *)ret, 1);
+  // Log("before ret list=%x\n", free_page_list);
+  // Log("kalloc ret=%x\n", ret);
 
   return ret;
 }
@@ -101,14 +113,32 @@ void *kalloc() {
 // Lab1-4: 回收ptr指向的那一页内存，要求ptr指向之前分配出去的某一页
 void kfree(void *ptr) {
   //TODO();
-  page_t *free_p = (void *)PAGE_DOWN(ptr);
-  memset(free_p, 0, PGSIZE);
+  assert(ptr >= (void *)KER_MEM);
+  assert(ptr < (void *)PHY_MEM);
+  page_t *page = (void *)(PAGE_DOWN(ptr));
+  // Log("kfree %x------------------------->%x\n", page, free_page_list);
+  // Log("kfree %x------------------------->%x\n", free_page_list, free_page_list->next);
 
-  //将对应pte的P位设置为0 not sure
-  set_pte_P((void *)free_p, 0);
+  page_t *free_pg = free_page_list;
+  // int number = 0;
+  while(free_pg){
+    // number++;
+    if((void *)free_pg == (void *)page) {
+      // Log("num=%d\n", number);
+      return;
+    }
+    else free_pg = free_pg->next;
+  }
 
-  free_p->next = free_page_list;
-  free_page_list = free_p;
+  // Log("!!!!!!!!!free_p=%x\n", page);
+  memset((void *)page, 0, PGSIZE);
+
+  page->next = free_page_list;
+  free_page_list = page;
+  // Log("free_page_list=%x\n", free_page_list);
+  // Log("free_page_list->next=%x\n", free_page_list->next);
+  set_cr3(vm_curr());
+  
 }
 
 // Lab1-4: 返回一个用户页目录，并映射[0, PHY_MEM)的恒等映射
@@ -122,20 +152,20 @@ PD *vm_alloc() {
   return ret;
 }
 
-// Lab1-4: 把pgdir这一页目录下下辖的所有页表，和所映射到的所有物理页全部kfree（除了内核区）
+// Lab1-4: 把pgdir这一页目录下下辖的所有页表，和所映射到的所有物理页全部kfree（除了内核区）用的时候要改有效位
 void vm_teardown(PD *pgdir) {
-  //TODO();
-  for(int i = 32; i < NR_PDE; i++){
-    if(pgdir->pde[i].present == 1){
-      for(int j = 0; j < NR_PTE; j++){
-        if(PDE2PT(pgdir->pde[i])->pte[j].present == 1){
-          kfree((void *)PTE2PG(PDE2PT(pgdir->pde[i])->pte[j])); // 释放物理页 not sure
-        }
-      }
-      kfree((void *)PDE2PT(pgdir->pde[i])); // 释放pde[i]对应的页表
-    }
-  }
-  kfree((void *)pgdir); // 释放页目录页
+  // //TODO();
+  // for(int i = 32; i < NR_PDE; i++){
+  //   if(pgdir->pde[i].present == 1){
+  //     for(int j = 0; j < NR_PTE; j++){
+  //       if(PDE2PT(pgdir->pde[i])->pte[j].present == 1){
+  //         kfree((void *)PTE2PG(PDE2PT(pgdir->pde[i])->pte[j])); // 释放物理页 not sure
+  //       }
+  //     }
+  //     kfree((void *)PDE2PT(pgdir->pde[i])); // 释放pde[i]对应的页表
+  //   }
+  // }
+  // kfree((void *)pgdir); // 释放页目录页
 }
 
 PD *vm_curr() {
@@ -167,7 +197,7 @@ void *vm_walk(PD *pgdir, size_t va, int prot) {
   // if va is not mapped and !(prot&1), return NULL
   // TODO(); // to be perfected
   PTE *va_pte = vm_walkpte(pgdir, va, prot);
-  if(va_pte == NULL) return NULL;
+  if(va_pte == NULL || va_pte->present == 0) return NULL;
   void *page = PTE2PG(*va_pte); // 根据PTE找物理页的地址
   if(!(va_pte->page_frame) && !(prot&1)) return NULL;
   void *pa = (void*)((uint32_t)page | ADDR2OFF(va)); // 补上页内偏移量
@@ -183,7 +213,8 @@ void vm_map(PD *pgdir, size_t va, size_t len, int prot) {
   size_t end = PAGE_UP(va + len);
   assert(start >= PHY_MEM);
   assert(end >= start);
-  // TODO(); // not sure
+  // TODO(); // not sure 
+
   while(start < end){
     PTE *pte = vm_walkpte(pgdir, start, prot);
     if(pte == NULL){
@@ -195,8 +226,13 @@ void vm_map(PD *pgdir, size_t va, size_t len, int prot) {
       start += PGSIZE;
       continue;
     }
+    // Log("list=%x\n", free_page_list);
     page_t *new_page = kalloc();
     pte->val = MAKE_PTE(new_page, prot);
+    set_pte_p(pte, 1);
+    set_cr3(vm_curr());
+
+    // set_pte_P((void *)new_page, 1);
     start += PGSIZE;
   }
 }
@@ -211,18 +247,25 @@ void vm_unmap(PD *pgdir, size_t va, size_t len) { // not sure
   while(start < end){
     PTE *pte = vm_walkpte(pgdir, start, 3); // not sure
     if(pte == NULL){
-      int pd_index = ADDR2DIR(start); // 计算“页目录号”
-      kfree((void *)PDE2PT(pgdir->pde[pd_index])); // 释放pde对应的页表
+      // int pd_index = ADDR2DIR(start); // 计算“页目录号”
+      // kfree((void *)PDE2PT(pgdir->pde[pd_index])); // 释放pde对应的页表
       start += PGSIZE;
       continue;
     }
+    else{
     page_t *paddr_page = vm_walk(pgdir, start, 3);
-    kfree(paddr_page); // 释放物理页
-    int pd_index = ADDR2DIR(start); // 计算“页目录号”
-    kfree((void *)PDE2PT(pgdir->pde[pd_index])); // 释放pde对应的页表
+    // Log("paddr_page=%x\n", paddr_page);
+    if(paddr_page != NULL) kfree(paddr_page); // 释放物理页
+    pte->page_frame = 0;
+    set_pte_p(pte, 0);
+    set_cr3(vm_curr());
+    // int pd_index = ADDR2DIR(start); // 计算“页目录号”
+    // kfree((void *)PDE2PT(pgdir->pde[pd_index])); // 释放pde对应的页表
     start += PGSIZE;
+    }
   }
-  set_cr3(vm_curr());
+  // Log("unmap free_page_list=%x\n", free_page_list);
+  // Log("unmap free_page_list->next=%x\n", free_page_list->next);
   //TODO();
 }
 

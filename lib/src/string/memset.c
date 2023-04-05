@@ -6,7 +6,6 @@ memset (void *m,
       size_t n)
 {
   char *s = (char *) m;
-
   while (n--)
     *s++ = (char) c;
 
