@@ -29,18 +29,6 @@ typedef union free_page {
 
 page_t *free_page_list;
 
-// 设置addr对应的pte的P位 not sure
-// void set_pte_P(void *addr, uint32_t p){
-//   void *ad = addr;
-//   uint32_t free_p_dir = ADDR2DIR(ad);
-//   uint32_t free_p_tbl = ADDR2TBL(ad);
-//   // Log("dir=%u, tbl=%u\n", free_p_dir, free_p_tbl);
-//   kpt[free_p_dir].pte[free_p_tbl].present &= 0; // not sure
-//   kpt[free_p_dir].pte[free_p_tbl].present |= p;
-//   // Log("present=%x, val=%x\n", kpt[free_p_dir].pte[free_p_tbl].present, kpt[free_p_dir].pte[free_p_tbl].val);
-//   set_cr3(vm_curr());
-// }
-
 // 设置pte的p位
 void set_pte_p(PTE *pte, uint32_t p){
   pte->present &= 0;
@@ -96,16 +84,16 @@ void *kalloc() {
     assert(0);
   }
   void *ret = free_page_list;
+  // Log("kallllllllllllllllllllllllllll\n");
+
+  kpt[ADDR2DIR(ret)].pte[ADDR2TBL(ret)].present = 1;
+
   free_page_list = free_page_list->next;
+
   // Log("before %x------>%x\n", free_page_list, free_page_list->next);
   memset(ret, 0, PGSIZE);
   // Log("afterr %x------>%x\n", free_page_list, free_page_list->next);
   // Log("ret %x\n", ret);
-
-  //将对应pte的P位设置为1 not sure
-  // set_pte_P((void *)ret, 1);
-  // Log("before ret list=%x\n", free_page_list);
-  // Log("kalloc ret=%x\n", ret);
 
   return ret;
 }
@@ -122,23 +110,25 @@ void kfree(void *ptr) {
   page_t *free_pg = free_page_list;
   // int number = 0;
   while(free_pg){
-    // number++;
     if((void *)free_pg == (void *)page) {
-      // Log("num=%d\n", number);
       return;
     }
-    else free_pg = free_pg->next;
+    else {
+      kpt[ADDR2DIR(free_pg)].pte[ADDR2TBL(free_pg)].present = 1;
+      free_pg = free_pg->next;
+      kpt[ADDR2DIR(free_pg)].pte[ADDR2TBL(free_pg)].present = 0;
+    }
   }
-
   // Log("!!!!!!!!!free_p=%x\n", page);
   memset((void *)page, 0, PGSIZE);
 
   page->next = free_page_list;
   free_page_list = page;
+
   // Log("free_page_list=%x\n", free_page_list);
   // Log("free_page_list->next=%x\n", free_page_list->next);
+  kpt[ADDR2DIR(page)].pte[ADDR2TBL(page)].present = 0;
   set_cr3(vm_curr());
-  
 }
 
 // Lab1-4: 返回一个用户页目录，并映射[0, PHY_MEM)的恒等映射
@@ -149,6 +139,8 @@ PD *vm_alloc() {
     ret->pde[i].val = MAKE_PDE(&kpt[i], 3);
   }
   memset(&(ret->pde[32]), 0, PGSIZE - 32 * 4); // not sure
+  
+  set_cr3(vm_curr());
   return ret;
 }
 
@@ -199,7 +191,7 @@ void *vm_walk(PD *pgdir, size_t va, int prot) {
   PTE *va_pte = vm_walkpte(pgdir, va, prot);
   if(va_pte == NULL || va_pte->present == 0) return NULL;
   void *page = PTE2PG(*va_pte); // 根据PTE找物理页的地址
-  if(!(va_pte->page_frame) && !(prot&1)) return NULL;
+  if(!(va_pte->page_frame) || !(prot&1)) return NULL;
   void *pa = (void*)((uint32_t)page | ADDR2OFF(va)); // 补上页内偏移量
   return pa;
 }
@@ -214,9 +206,9 @@ void vm_map(PD *pgdir, size_t va, size_t len, int prot) {
   assert(start >= PHY_MEM);
   assert(end >= start);
   // TODO(); // not sure 
-
   while(start < end){
     PTE *pte = vm_walkpte(pgdir, start, prot);
+    // Log("----------------------------------vm_map pte=%x\n", pte);
     if(pte == NULL){
       start += PGSIZE;
       continue;
@@ -226,7 +218,7 @@ void vm_map(PD *pgdir, size_t va, size_t len, int prot) {
       start += PGSIZE;
       continue;
     }
-    // Log("list=%x\n", free_page_list);
+    // Log("--------------------------------------------list=%x\n", free_page_list);
     page_t *new_page = kalloc();
     pte->val = MAKE_PTE(new_page, prot);
     set_pte_p(pte, 1);

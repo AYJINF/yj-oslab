@@ -44,6 +44,8 @@ int sys_brk(void *addr) {
   static size_t brk = 0; // use brk of proc instead of this in Lab2-1
   size_t new_brk = PAGE_UP(addr);
 
+  // Log("brk=%x, new_brk=%x\n", brk, new_brk);
+
   if (brk == 0) {
     brk = new_brk;
   } 
