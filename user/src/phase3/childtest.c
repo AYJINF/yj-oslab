@@ -5,6 +5,9 @@ int main(int argc, char *argv[]) {
   int mode = strtol(argv[1], NULL, 10);
   int pticks = strtol(argv[2], NULL, 10);
   int cticks = strtol(argv[3], NULL, 10);
+
+  // printf("mode=%d, pticks=%d, cticks=%d\n", mode, pticks, cticks);
+
   int pid = fork();
   if (pid == -1) {
     printf("childtest: fork failed.\n");
@@ -22,6 +25,7 @@ int main(int argc, char *argv[]) {
       sleep(pticks);
     }
     if (mode) {
+      // printf("wait------ mode=%d, pticks=%d, cticks=%d\n", mode, pticks, cticks);
       assert(wait(&status) == pid);
       printf("child exit @ %d\n", status);
     }

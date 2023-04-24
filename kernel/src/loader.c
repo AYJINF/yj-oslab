@@ -49,11 +49,12 @@ uint32_t load_arg(PD *pgdir, char *const argv[]) {
   char *stack_top = (char*)vm_walk(pgdir, USR_MEM - PGSIZE, 7) + PGSIZE;
   size_t argv_va[MAX_ARGS_NUM + 1];
   int argc;
-  for (argc = 0; argv[argc]; ++argc) {
+  for (argc = 0; argv[argc] != NULL; ++argc) {
     assert(argc < MAX_ARGS_NUM);
     // push the string of argv[argc] to stack, record its va to argv_va[argc]
     // TODO();
     size_t len = strlen(argv[argc]);
+
     stack_top -= (len + 1);
     strcpy(stack_top, argv[argc]);
     argv_va[argc] = USR_MEM-PGSIZE + ADDR2OFF(stack_top); // not sure

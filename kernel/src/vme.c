@@ -147,17 +147,17 @@ PD *vm_alloc() {
 // Lab1-4: 把pgdir这一页目录下下辖的所有页表，和所映射到的所有物理页全部kfree（除了内核区）用的时候要改有效位
 void vm_teardown(PD *pgdir) {
   // //TODO();
-  // for(int i = 32; i < NR_PDE; i++){
-  //   if(pgdir->pde[i].present == 1){
-  //     for(int j = 0; j < NR_PTE; j++){
-  //       if(PDE2PT(pgdir->pde[i])->pte[j].present == 1){
-  //         kfree((void *)PTE2PG(PDE2PT(pgdir->pde[i])->pte[j])); // 释放物理页 not sure
-  //       }
-  //     }
-  //     kfree((void *)PDE2PT(pgdir->pde[i])); // 释放pde[i]对应的页表
-  //   }
-  // }
-  // kfree((void *)pgdir); // 释放页目录页
+  for(int i = 32; i < NR_PDE; i++){
+    if(pgdir->pde[i].present == 1){
+      for(int j = 0; j < NR_PTE; j++){
+        if(PDE2PT(pgdir->pde[i])->pte[j].present == 1){
+          kfree((void *)PTE2PG(PDE2PT(pgdir->pde[i])->pte[j])); // 释放物理页 not sure
+        }
+      }
+      kfree((void *)PDE2PT(pgdir->pde[i])); // 释放pde[i]对应的页表
+    }
+  }
+  kfree((void *)pgdir); // 释放页目录页
 }
 
 PD *vm_curr() {
@@ -170,14 +170,14 @@ PTE *vm_walkpte(PD *pgdir, size_t va, int prot) {
   int pd_index = ADDR2DIR(va); // 计算“页目录号”
   PDE *pde = &(pgdir->pde[pd_index]); // 找到对应的页目录项
   if(pde->present == 0){
-    if(!(prot&1)) return NULL;
+    if((prot&1) == 0) return NULL;
     PT *new_pt = kalloc();
     pde->val = MAKE_PDE(new_pt, prot);
     pde->present |= 1;
     int pt_index = ADDR2TBL(va); // 计算“页表号”
     return &(new_pt->pte[pt_index]); // 返回对应的页表项
   }
-  pde->val |= prot; // not sure
+  if(prot != 0) pde->val |= prot; // not sure
   PT *pt = PDE2PT(*pde); // 根据PDE找页表的地址
   int pt_index = ADDR2TBL(va); // 计算“页表号”
   return &(pt->pte[pt_index]); // 返回对应的页表项
@@ -193,6 +193,7 @@ void *vm_walk(PD *pgdir, size_t va, int prot) {
   void *page = PTE2PG(*va_pte); // 根据PTE找物理页的地址
   if(!(va_pte->page_frame) || !(prot&1)) return NULL;
   void *pa = (void*)((uint32_t)page | ADDR2OFF(va)); // 补上页内偏移量
+  
   return pa;
 }
 
@@ -261,9 +262,21 @@ void vm_unmap(PD *pgdir, size_t va, size_t len) { // not sure
   //TODO();
 }
 
+// 复制当前的虚拟地址空间到pgdir这个页目录，调用时要求pgdir刚vm_alloc出来，只有[0, PHY_MEM)的恒等映射
 void vm_copycurr(PD *pgdir) {
   // Lab2-2: copy memory mapped in curr pd to pgdir
-  TODO();
+  // TODO();
+  PD *cur_pgdir = vm_curr();
+  for(size_t old_va = PHY_MEM; old_va < USR_MEM; old_va += PGSIZE){
+    PTE *va_pte = vm_walkpte(cur_pgdir, old_va, 0);
+    if(!va_pte) continue;
+    if(va_pte->present){
+      int prot = (va_pte->val)&0x7;
+      vm_map(pgdir, old_va, PGSIZE, prot);
+      page_t *new_pa = vm_walk(pgdir, old_va, prot);
+      memcpy((void *)new_pa, (void *)old_va, PGSIZE);
+    }
+  }
 }
 
 void vm_pgfault(size_t va, int errcode) {
