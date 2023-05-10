@@ -14,6 +14,6 @@ void init_cte();
 void irq_iret(Context *ctx) __attribute__((noreturn));
 
 void do_syscall(Context *ctx);
-void exception_debug_handler(Context *ctx);
+void exception_debug_handler(Context *ctx); 
 
 #endif

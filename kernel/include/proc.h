@@ -10,7 +10,7 @@
 #define KSTACK_SIZE 4096
 
 typedef union {
-  uint8_t stack[KSTACK_SIZE];
+  uint8_t stack[KSTACK_SIZE]; 
   struct {
     uint8_t pad[KSTACK_SIZE - sizeof(Context)];
     Context ctx;
