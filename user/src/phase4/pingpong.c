@@ -29,7 +29,9 @@ int main(int argc, char *argv[]) {
     printf("pingpong: sem open failed\n");
     return 1;
   }
+  // printf("before fork getpid=%d\n", getpid());
   int pid = fork();
+  // printf("getpid=%d\n", getpid());
   if (pid == -1) {
     printf("pingpong: fork failed\n");
     return 1;

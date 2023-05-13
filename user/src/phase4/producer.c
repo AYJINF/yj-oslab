@@ -7,7 +7,9 @@
 int empty, full, mutex;
 
 int fork_s() {
+  // printf("before fork getpid=%d\n", getpid());
   int pid = fork();
+  // printf("fork pid =%d, getpid=%d\n", pid, getpid());
   assert(pid >= 0);
   return pid;
 }
@@ -24,6 +26,7 @@ void producer(int id) {
   while (1) {
     produce_one();
     P(empty);
+    // printf("producer--------id=%d\n", id);
     P(mutex);
     // put to buffer
     printf("producer %d: produce\n", id);

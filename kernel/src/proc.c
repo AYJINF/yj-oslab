@@ -15,6 +15,13 @@ void init_proc() {
   curr->pgdir = vm_curr();
   curr->kstack = (void*)(KER_MEM-PGSIZE);
   // Lab2-4, init zombie_sem
+  sem_init(&(curr->zombie_sem), 0);
+  // curr->zombie_sem.value = 0;
+  // list_init(&(curr->zombie_sem.wait_list));
+  // Lab2-5, init usem (not sure)
+  for(int i = 0; i < MAX_USEM; i++){
+    curr->usems[i] = NULL;
+  }
   // Lab3-2, set cwd
 }
 
@@ -35,6 +42,14 @@ proc_t *proc_alloc() {
       free_pcb->ctx = &(free_pcb->kstack->ctx);
       free_pcb->parent = NULL;
       free_pcb->child_num = 0;
+      // lab 2-4-2
+      sem_init(&(free_pcb->zombie_sem), 0);
+      // free_pcb->zombie_sem.value = 0;
+      // list_init(&(free_pcb->zombie_sem.wait_list));
+      // lab 2-5
+      for(int j = 0; j < MAX_USEM; j++){
+        free_pcb->usems[j] = NULL;
+      }
       break;
     }
   }
@@ -92,6 +107,12 @@ void proc_copycurr(proc_t *proc) {
   proc->kstack->ctx.eax = 0;
   proc->parent = proc_cur;
   proc_cur->child_num++;
+
+  for(int i = 0; i < MAX_USEM; i++){
+    proc->usems[i] = proc_cur->usems[i];
+    if(proc_cur->usems[i] != NULL) // not sure
+      proc_cur->usems[i] = usem_dup(proc_cur->usems[i]);
+  }
 }
 
 // 将proc的状态标记为ZOMBIE，退出状态记录为exitcode
@@ -101,8 +122,17 @@ void proc_makezombie(proc_t *proc, int exitcode) {
   // Lab3-1: close opened files
   // Lab3-2: close cwd
   // TODO();
+  if(proc->parent != NULL){
+    sem_v(&(proc->parent->zombie_sem));
+  }
   proc->status = ZOMBIE;
   proc->exit_code = exitcode;
+
+  for(int i = 0; i < MAX_USEM; i++){
+    usem_t *tmp_usem = proc->usems[i];
+    if(tmp_usem != NULL) usem_close(tmp_usem); // not sure
+  }
+
   for(int i = 0; i < PROC_NUM; i++){
     proc_t *tmp_pcb = &pcb[i];
     if(tmp_pcb->parent == proc){
@@ -125,20 +155,28 @@ proc_t *proc_findzombie(proc_t *proc) {
   return NULL;
 }
 
+// Lab2-4: mark curr proc BLOCKED, then int $0x81
 void proc_block() {
-  // Lab2-4: mark curr proc BLOCKED, then int $0x81
   curr->status = BLOCKED;
   INT(0x81);
 }
 
+// 遍历proc的用户信号量表，找到一个空的（即为NULL）的下标并返回，没有空的返回-1
 int proc_allocusem(proc_t *proc) {
-  // Lab2-5: find a free slot in proc->usems, return its index, or -1 if none
-  TODO();
+// Lab2-5: find a free slot in proc->usems, return its index, or -1 if none
+  // TODO();
+  for(int i = 0; i < MAX_USEM; i++){
+    if(proc->usems[i] == NULL) return i;
+  }
+  return -1;
 }
 
+// 返回proc用户信号量表中第sem_id项对应的用户信号量，如果下标越界返回NULL. 
 usem_t *proc_getusem(proc_t *proc, int sem_id) {
   // Lab2-5: return proc->usems[sem_id], or NULL if sem_id out of bound
-  TODO();
+  // TODO();
+  if(sem_id >= MAX_USEM) return NULL;
+  return proc->usems[sem_id];
 }
 
 int proc_allocfile(proc_t *proc) {

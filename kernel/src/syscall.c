@@ -107,6 +107,7 @@ int sys_fork() {
   if(!proc) return -1;
   proc_copycurr(proc);
   proc_addready(proc);
+  // Log("fork pid=%d\n", proc->pid);
   return proc->pid;
 }
 
@@ -120,39 +121,76 @@ void sys_exit(int status) {
 
 int sys_wait(int *status) {
   // TODO(); // Lab2-3, Lab2-4
-  // Log("iiiiiiiiiiiiiiiiiiiiiiiii\n");
   proc_t *proc_cur = proc_curr();
   if(proc_cur->child_num == 0) return -1;
-  while(1){
-    proc_t *proc_child = proc_findzombie(proc_cur);
-    if(proc_child){
-    // Log("proc_pid=%d, child_pid=%d, child_num=%d, child_exitcode=%d\n", proc_cur->pid, proc_child->pid, proc_cur->child_num, proc_child->exit_code);
-      if(status) *status = proc_child->exit_code;
-      int child_pid = proc_child->pid;
-      // Log("child_pid=%d\n", child_pid);
-      proc_free(proc_child);
-      proc_cur->child_num--;
-      return child_pid;
-    }
-    else proc_yield();
-  }
+
+  sem_p(&(proc_cur->zombie_sem));
+  proc_t *proc_child = proc_findzombie(proc_cur);
+  assert(proc_child != NULL);
+  if(status) *status = proc_child->exit_code;
+  int child_pid = proc_child->pid;
+  proc_free(proc_child);
+  proc_cur->child_num--;
+  return child_pid;
+  // while(1){
+  //   proc_t *proc_child = proc_findzombie(proc_cur);
+  //   if(proc_child){
+  //   // Log("proc_pid=%d, child_pid=%d, child_num=%d, child_exitcode=%d\n", proc_cur->pid, proc_child->pid, proc_cur->child_num, proc_child->exit_code);
+  //     if(status) *status = proc_child->exit_code;
+  //     int child_pid = proc_child->pid;
+  //     // Log("child_pid=%d\n", child_pid);
+  //     proc_free(proc_child);
+  //     proc_cur->child_num--;
+  //     return child_pid;
+  //   }
+  //   else proc_yield();
+  // }
+  // return 0;
+}
+
+// 打开一个初值为value的用户信号量，成功返回其编号，失败返回-1
+int sys_sem_open(int value) {
+  // TODO(); // Lab2-5
+  proc_t *proc_cur = proc_curr();
+  int id_sem = proc_allocusem(proc_cur);
+  if(id_sem == -1) return -1;
+  // Log("open value=%d, id=%d\n", value, id_sem);
+  usem_t *usem = usem_alloc(value);
+  if(usem == NULL) return -1;
+  proc_cur->usems[id_sem] = usem;
+  return id_sem;
+}
+
+// P编号为sem_id对应的信号量，成功返回0，失败（信号量不存在）返回-1
+int sys_sem_p(int sem_id) {
+  // TODO(); // Lab2-5
+  proc_t *proc_cur = proc_curr();
+  usem_t *tmp_usem = proc_getusem(proc_cur, sem_id);
+  if(tmp_usem == NULL) return -1;
+  // Log("sem value=%d\n", tmp_usem->sem.value);
+  sem_p(&(tmp_usem->sem));
   return 0;
 }
 
-int sys_sem_open(int value) {
-  TODO(); // Lab2-5
-}
-
-int sys_sem_p(int sem_id) {
-  TODO(); // Lab2-5
-}
-
+// V编号为sem_id对应的信号量，成功返回0，失败（信号量不存在）返回-1
 int sys_sem_v(int sem_id) {
-  TODO(); // Lab2-5
+  // TODO(); // Lab2-5
+  proc_t *proc_cur = proc_curr();
+  usem_t *tmp_usem = proc_getusem(proc_cur, sem_id);
+  if(tmp_usem == NULL) return -1;
+  sem_v(&(tmp_usem->sem));
+  return 0;
 }
 
+// 关闭编号为sem_id对应的信号量，成功返回0，失败（信号量不存在）返回-1
 int sys_sem_close(int sem_id) {
   TODO(); // Lab2-5
+  proc_t *proc_cur = proc_curr();
+  usem_t *tmp_usem = proc_getusem(proc_cur, sem_id);
+  if(tmp_usem == NULL) return -1;
+  usem_close(tmp_usem);
+  proc_cur->usems[sem_id] = NULL;
+  return 0;
 }
 
 int sys_open(const char *path, int mode) {
