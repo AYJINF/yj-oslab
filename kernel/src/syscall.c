@@ -29,19 +29,29 @@ void do_syscall(Context *ctx) {
   ctx->eax = res;
 }
 
+// 从buf写count字节到fd表示的文件，返回写的字节数（或-1如果失败）
 int sys_write(int fd, const void *buf, size_t count) {
   // TODO: rewrite me at Lab3-1
-  return serial_write(buf, count);
+  proc_t *proc_cur = proc_curr();
+  file_t *file = proc_getfile(proc_cur, fd);
+  if(file == NULL) return -1;
+  int ret = fwrite(file, buf, count);
+  return ret;
 }
 
+// 从fd表示的文件读count字节到buf，返回读的字节数（或-1如果失败）
 int sys_read(int fd, void *buf, size_t count) {
   // TODO: rewrite me at Lab3-1
-  return serial_read(buf, count);
+  proc_t *proc_cur = proc_curr();
+  file_t *file = proc_getfile(proc_cur, fd);
+  if(file == NULL) return -1;
+  int ret = fread(file, buf, count);
+  return ret;
 }
 
 int sys_brk(void *addr) {
   // TODO: Lab1-5
-  proc_t * proc_cur = proc_curr();
+  proc_t *proc_cur = proc_curr();
   // static size_t brk = 0; // use brk of proc instead of this in Lab2-1
   size_t new_brk = PAGE_UP(addr);
 
@@ -193,24 +203,71 @@ int sys_sem_close(int sem_id) {
   return 0;
 }
 
+// 打开path代表的文件，返回其文件描述符（要求为可用中最小的），失败返回-1，mode的意义同前面介绍的fopen
 int sys_open(const char *path, int mode) {
-  TODO(); // Lab3-1
+  // TODO(); // Lab3-1
+  proc_t *proc_cur = proc_curr();
+  int fd = proc_allocfile(proc_cur);
+  if(fd == -1) return -1;
+  file_t *file = fopen(path, mode);
+  if(file == NULL) return -1;
+  proc_cur->files[fd] = file;
+  return fd;
 }
 
+// 关闭fd表示的文件，成功返回0，失败返回-1
 int sys_close(int fd) {
-  TODO(); // Lab3-1
+  // TODO(); // Lab3-1
+  proc_t *proc_cur = proc_curr();
+  file_t *file = proc_getfile(proc_cur, fd);
+  if(file == NULL) return -1;
+  fclose(file);
+  proc_cur->files[fd] = NULL;
+  return 0;
 }
 
+// 复制fd表示的file_t指针到新的文件描述符并返回（要求为可用中最小的），失败返回-1
 int sys_dup(int fd) {
-  TODO(); // Lab3-1
+  // TODO(); // Lab3-1
+  proc_t *proc_cur = proc_curr();
+  int new_fd = proc_allocfile(proc_cur);
+  if(new_fd == -1) return -1;
+  file_t *file = proc_getfile(proc_cur, fd);
+  if(file == NULL) return -1;
+  proc_cur->files[new_fd] = fdup(file);
+  return new_fd;
 }
 
+// 调整fd指向的文件的文件的偏移量并返回，whence的意义同前面介绍的fseek，失败返回-1
 uint32_t sys_lseek(int fd, uint32_t off, int whence) {
-  TODO(); // Lab3-1
+  // TODO(); // Lab3-1
+  proc_t *proc_cur = proc_curr();
+  file_t *file = proc_getfile(proc_cur, fd);
+  if(file == NULL) return -1;
+  uint32_t ret = fseek(file, off, whence);
+  return ret; // not sure
 }
 
+// 记录fd指向的文件的信息于st结构体中，成功返回0，失败返回-1
 int sys_fstat(int fd, struct stat *st) {
-  TODO(); // Lab3-1
+  // TODO(); // Lab3-1
+  proc_t *proc_cur = proc_curr();
+  file_t *file = proc_getfile(proc_cur, fd);
+  int type = file->type;
+  if(type == TYPE_FILE || type == TYPE_DIR){
+    inode_t *inode = file->inode;
+    st->type = itype(inode);
+    st->size = isize(inode);
+    st->node = ino(inode);
+    return 0;
+  }
+  else if(type == TYPE_DEV){
+    st->type = TYPE_DEV;
+    st->size = 0;
+    st->node = 0;
+    return 0;
+  }
+  return -1;
 }
 
 int sys_chdir(const char *path) {

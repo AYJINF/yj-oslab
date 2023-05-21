@@ -44,11 +44,13 @@ proc_t *proc_alloc() {
       free_pcb->child_num = 0;
       // lab 2-4-2
       sem_init(&(free_pcb->zombie_sem), 0);
-      // free_pcb->zombie_sem.value = 0;
-      // list_init(&(free_pcb->zombie_sem.wait_list));
       // lab 2-5
       for(int j = 0; j < MAX_USEM; j++){
         free_pcb->usems[j] = NULL;
+      }
+      //lab 3-1
+      for(int k = 0; k < MAX_UFILE; k++){
+        free_pcb->files[k] = NULL;
       }
       break;
     }
@@ -110,8 +112,16 @@ void proc_copycurr(proc_t *proc) {
 
   for(int i = 0; i < MAX_USEM; i++){
     proc->usems[i] = proc_cur->usems[i];
-    if(proc_cur->usems[i] != NULL) // not sure
+    if(proc_cur->usems[i] != NULL){ // not sure
       proc_cur->usems[i] = usem_dup(proc_cur->usems[i]);
+    }
+  }
+
+  for(int j = 0; j < MAX_UFILE; j++){
+    proc->files[j] = proc_cur->files[j];
+    if(proc_cur->files[j] != NULL){
+      proc_cur->files[j] = fdup(proc_cur->files[j]);
+    }
   }
 }
 
@@ -131,6 +141,11 @@ void proc_makezombie(proc_t *proc, int exitcode) {
   for(int i = 0; i < MAX_USEM; i++){
     usem_t *tmp_usem = proc->usems[i];
     if(tmp_usem != NULL) usem_close(tmp_usem); // not sure
+  }
+
+  for(int i = 0; i < MAX_UFILE; i++){
+    file_t *tmp_file = proc->files[i];
+    if(tmp_file != NULL) fclose(tmp_file);
   }
 
   for(int i = 0; i < PROC_NUM; i++){
@@ -179,15 +194,23 @@ usem_t *proc_getusem(proc_t *proc, int sem_id) {
   return proc->usems[sem_id];
 }
 
+// 遍历用户打开文件表，找到空闲的最小下标并返回，没有空的返回-1
 int proc_allocfile(proc_t *proc) {
   // Lab3-1: find a free slot in proc->files, return its index, or -1 if none
-  TODO();
+  // TODO();
+  for(int i = 0; i < MAX_UFILE; i++){
+    if(proc->files[i] == NULL) return i;
+  }
+  return -1;
 }
 
+// 返回用户打开文件表第fd项对应文件，或NULL如果fd越界
 file_t *proc_getfile(proc_t *proc, int fd) {
   // Lab3-1: return proc->files[fd], or NULL if fd out of bound
-  TODO();
-}
+  // TODO();
+  if(fd >= MAX_UFILE) return NULL;
+  return proc->files[fd];
+ }
 
 void schedule(Context *ctx) {
   // Lab2-1: save ctx to curr->ctx, then find a READY proc and run it

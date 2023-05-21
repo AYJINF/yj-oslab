@@ -15,7 +15,7 @@ static struct {
   char name[32];
   dev_t dev_op;
 } dev_table[] = {
-  {"/dev/serial", {serial_read, serial_write}},
+  {"/dev/serial", {serial_read, serial_write}}, 
   {"/dev/null", {ban_read, ignore_write}}
 };
 
@@ -28,6 +28,7 @@ void init_dev() {
   }
 }
 
+// 返回设备号为id的设备对应dev_t的指针
 dev_t *dev_get(int id) {
   if (id >= DEV_NUM) return NULL;
   return &dev_table[id].dev_op;
