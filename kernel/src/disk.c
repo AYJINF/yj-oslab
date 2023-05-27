@@ -68,6 +68,7 @@ static bcache_t *bgetcache(uint32_t no) {
   return bc;
 }
 
+// 把第no号逻辑块从off偏移量处的内容读取size字节到内存中
 void bread(void *dst, uint32_t size, uint32_t no, uint32_t off) {
   // read blk no's [off, off+size) to dst, promise off+size<=BLK_SIZE
   assert(size + off <= BLK_SIZE);
@@ -75,6 +76,7 @@ void bread(void *dst, uint32_t size, uint32_t no, uint32_t off) {
   memcpy(dst, &bc->buf[off], size);
 }
 
+// 将内存src中的size字节写到第no号逻辑块的off偏移量处
 void bwrite(const void *src, uint32_t size, uint32_t no, uint32_t off) {
   // write src to blk no's [off, off+size), promise off+size<=BLK_SIZE
   assert(size + off <= BLK_SIZE);
@@ -83,6 +85,7 @@ void bwrite(const void *src, uint32_t size, uint32_t no, uint32_t off) {
   copy_to_disk(bc->buf, BLK_SIZE, no * BLK_SIZE);
 }
 
+// 将第no号逻辑块的内容清零
 void bzero(uint32_t no) {
   bcache_t *bc = bgetcache(no);
   memset(bc->buf, 0, BLK_SIZE);

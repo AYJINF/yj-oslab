@@ -87,13 +87,13 @@ sb_t *sb; // pointor to the super block
 blk_t *bitmap; // pointor to the bitmap block
 dinode_t *root; // pointor to the root dir's inode
 
-// get the pointer to the memory of block no
+// 返回编号为no的逻辑块映射到的内存地址 get the pointer to the memory of block no
 static inline blk_t *bget(uint32_t no) {
   assert(no >= BLK_OFF);
   return &(img->blocks[no - BLK_OFF]);
 }
 
-// get the pointer to the memory of inode no
+// 返回编号为no的inode映射到的内存地址 get the pointer to the memory of inode no
 static inline dinode_t *iget(uint32_t no) {
   return (dinode_t*)&(bget(no/IPERBLK + INODE_START)->u8buf[(no%IPERBLK)*sizeof(dinode_t)]);
 }
@@ -114,7 +114,7 @@ int main(int argc, char *argv[]) {
   if (tfd < 0) panic("open target error");
   if (ftruncate(tfd, IMG_SIZE) < 0) panic("truncate error");
   // map the img to memory, you can edit file by edit memory
-  img = mmap(NULL, IMG_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, tfd, 0);
+  img = mmap(NULL, IMG_SIZE,   PROT_READ | PROT_WRITE, MAP_SHARED, tfd, 0);
   assert(img != (void*)-1);
   init_disk();
   for (int i = 2; i < argc; ++i) {
@@ -145,6 +145,7 @@ void init_disk() {
   iappend(root, &dirent, sizeof dirent);
 }
 
+// 申请一个空闲的逻辑块，设置bitmap中它的对应位，返回其编号（可以看到是从64号依次申请）
 uint32_t balloc() {
   // alloc a unused block, mark it on bitmap, then return its no
   static uint32_t next_blk = 64;
@@ -153,6 +154,7 @@ uint32_t balloc() {
   return next_blk++;
 }
 
+// 申请一个空闲的inode，设置其type，返回其编号（可以看到是从1号依次申请）
 uint32_t ialloc(int type) {
   // alloc a unused inode, return its no
   // first inode always unused, because dirent's inode 0 mark invalid
@@ -162,24 +164,63 @@ uint32_t ialloc(int type) {
   return next_inode++;
 }
 
+// 返回file对应的文件数据使用的第blk_no个逻辑块被映射到的内存地址，如果不存在这个逻辑块，就申请一个
 blk_t *iwalk(dinode_t *file, uint32_t blk_no) {
   // return the pointer to the file's data's blk_no th block, if no, alloc it
   if (blk_no < NDIRECT) {
-    // direct address
-    TODO();
+    if(file->addrs[blk_no] == 0){
+      file->addrs[blk_no] = balloc();
+    }
+    return bget(file->addrs[blk_no]);
   }
   blk_no -= NDIRECT;
   if (blk_no < NINDIRECT) {
     // indirect address
-    TODO();
+    if(file->addrs[NDIRECT] == 0){
+      file->addrs[NDIRECT] = balloc();
+    }
+    blk_t *indir_blk = bget(file->addrs[NDIRECT]);
+    if(indir_blk->u32buf[blk_no] == 0){
+      indir_blk->u32buf[blk_no] = balloc();
+    }
+    return bget(indir_blk->u32buf[blk_no]);
   }
   panic("file too big");
 }
 
+// 给file对应的文件尾部附加buf开始的size字节数据
 void iappend(dinode_t *file, const void *buf, uint32_t size) {
   // append buf to file's data, remember to add file->size
   // you can append block by block
-  TODO();
+  uint32_t size_tmp = size;
+  uint32_t blk_no = file->size / BLK_SIZE; // 第一个写入的逻辑块下标
+  uint32_t byte_start = file->size % BLK_SIZE; // 首先写入的字节位置
+  blk_t *blk_start = iwalk(file, blk_no); // 第一个写入的逻辑块地址
+
+  if(size_tmp >= BLK_SIZE - byte_start){
+    memcpy(&(blk_start->u32buf[byte_start]), buf, BLK_SIZE - byte_start);
+    size_tmp -= (BLK_SIZE - byte_start);
+    file->size += BLK_SIZE - byte_start;
+
+    while(size_tmp != 0){
+      blk_no++;
+      blk_t *blk_tmp = iwalk(file, blk_no);
+      if(size_tmp >= BLK_SIZE){
+        memcpy(&(blk_tmp->u32buf[0]), buf + (size - size_tmp), BLK_SIZE);
+        size_tmp -= BLK_SIZE;
+        file->size += BLK_SIZE;
+      }
+      else{
+        memcpy(&(blk_tmp->u32buf[0]), buf + (size - size_tmp), size_tmp); // not sure
+        file->size += size_tmp;
+        break;
+      }
+    }
+  }
+  else{
+    memcpy(&(blk_start->u32buf[byte_start]), buf, size_tmp);
+    file->size += size_tmp;
+  }
 }
 
 void add_file(char *path) {
@@ -191,10 +232,16 @@ void add_file(char *path) {
   dinode_t *inode = iget(inode_blk);
   // append dirent to root dir
   dirent_t dirent;
-  dirent.inode = inode_blk;
+  dirent.inode = inode_blk; // not sure
   strcpy(dirent.name, basename(path));
   iappend(root, &dirent, sizeof dirent);
   // write the file's data, first read it to buf then call iappend
-  TODO();
+  // TODO();
+  while(!feof(fp)){
+    memset(buf, 0, sizeof(buf));
+    size_t t = fread(buf, sizeof(uint8_t), sizeof(buf), fp);
+    if( t != sizeof(buf)) break;
+    iappend(inode, buf, BLK_SIZE); // not sure
+  }
   fclose(fp);
 }

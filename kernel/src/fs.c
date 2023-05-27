@@ -150,14 +150,17 @@ void init_fs() {
 #define I2BLKNO(no)  (sb.istart + no / IPERBLK)
 #define I2BLKOFF(no) ((no % IPERBLK) * sizeof(dinode_t))
 
+// 把第no号的inode读到内存中
 static void diread(dinode_t *di, uint32_t no) {
   bread(di, sizeof(dinode_t), I2BLKNO(no), I2BLKOFF(no));
 }
 
+// 把第no号的inode写到逻辑块中(not sure)
 static void diwrite(const dinode_t *di, uint32_t no) {
   bwrite(di, sizeof(dinode_t), I2BLKNO(no), I2BLKOFF(no));
 }
 
+// 申请一个空闲的磁盘inode，设置其type，并返回其编号
 static uint32_t dialloc(int type) {
   // Lab3-2: iterate all dinode, find a empty one (type==TYPE_NONE)
   // set type, clean other infos and return its no (remember to write back)
@@ -166,17 +169,24 @@ static uint32_t dialloc(int type) {
   dinode_t dinode;
   for (uint32_t i = 1; i < sb.inum; ++i) {
     diread(&dinode, i);
-    TODO();
+    // TODO();
+    if(dinode.type == TYPE_NONE){
+      dinode.type = type;
+      diwrite(&dinode, i);
+      return i;
+    }
   }
   assert(0);
 }
 
+// 回收编号为no的磁盘inode
 static void difree(uint32_t no) {
   dinode_t dinode;
   memset(&dinode, 0, sizeof dinode);
   diwrite(&dinode, no);
 }
 
+// 申请一个空闲的逻辑块，将其清零，并返回其编号
 static uint32_t balloc() {
   // Lab3-2: iterate bitmap, find one free block
   // set the bit, clean the blk (can call bzero) and return its no
@@ -184,30 +194,67 @@ static uint32_t balloc() {
   uint32_t byte;
   for (int i = 0; i < BLK_NUM / 32; ++i) {
     bread(&byte, 4, sb.bitmap, i * 4);
+
     if (byte != 0xffffffff) {
-      TODO();
+      uint32_t t = 1;
+      for(int j = 0; j < 32; j++){
+        if((byte & t) == 0){
+          bzero(i*32+j);
+          byte |= t;
+          bwrite(&byte, 4, sb.bitmap, i * 4);
+          return i*32+j;
+        }
+        t *= 2;
+      }
     }
   }
   assert(0);
 }
 
+// 回收第blkno号逻辑块
 static void bfree(uint32_t blkno) {
   // Lab3-2: clean the bit of blkno in bitmap
   assert(blkno >= 64); // cannot free first 64 block
-  TODO();
+  // TODO();
+  uint8_t byte;
+  bread(&byte, 1, sb.bitmap, blkno / 8);
+  int t = blkno % 8;
+  int tt = 1;
+  for(int i = 0; i < t; i++) tt *= 2;
+  byte |= tt;
+  bwrite(&byte, 1, sb.bitmap, blkno / 8); // not sure
 }
 
 #define INODE_NUM 128
 static inode_t inodes[INODE_NUM];
 
+// 在活动inode表中打开编号为no的inode
 static inode_t *iget(uint32_t no) {
   // Lab3-2
   // if there exist one inode whose no is just no, inc its ref and return it
   // otherwise, find a empty inode slot, init it and return it
   // if no empty inode slot, just abort
-  TODO();
+  // TODO();
+  for(int i = 1; i < INODE_NUM; i++){
+    if(inodes[i].no == no){
+      inodes[i].ref++; // not sure
+      return &inodes[i];
+    }
+  }
+  for(int i = 1; i < INODE_NUM; i++){
+    if(inodes[i].ref == 0){
+      inodes[i].no = no;
+      inodes[i].ref = 1;
+      inodes[i].del = 0;
+      diread(&inodes[i].dinode, no);
+      return &inodes[i];
+    }
+  }
+  assert(0);
+  return NULL;
 }
 
+// 将inode中的磁盘inode部分写回磁盘
 static void iupdate(inode_t *inode) {
   // Lab3-2: sync the inode->dinode to disk
   // call me EVERYTIME after you edit inode->dinode
@@ -226,7 +273,7 @@ static void iupdate(inode_t *inode) {
 //   skipelem("///a//bb", name) = "bb", setting name = "a"
 //   skipelem("a", name) = "", setting name = "a"
 //   skipelem("", name) = skipelem("////", name) = NULL
-//
+// 返回指向path的下一级路径的指针，并将这一级的名字存到name中
 static const char* skipelem(const char *path, char *name) {
   const char *s;
   int len;
@@ -246,6 +293,7 @@ static const char* skipelem(const char *path, char *name) {
   return path;
 }
 
+// 给inode对应的文件（一定是目录）创建.和..的两个目录项
 static void idirinit(inode_t *inode, inode_t *parent) {
   // Lab3-2: init the dir inode, i.e. create . and .. dirent
   assert(inode->dinode.type == TYPE_DIR);
@@ -262,6 +310,7 @@ static void idirinit(inode_t *inode, inode_t *parent) {
   iwrite(inode, sizeof dirent, &dirent, sizeof dirent);
 }
 
+// 遍历parent这个目录，找到其中名字为name的文件并打开，返回打开的inode
 static inode_t *ilookup(inode_t *parent, const char *name, uint32_t *off, int type) {
   // Lab3-2: iterate the parent dir, find a file whose name is name
   // if off is not NULL, store the offset of the dirent_t to it
@@ -279,15 +328,29 @@ static inode_t *ilookup(inode_t *parent, const char *name, uint32_t *off, int ty
       continue;
     }
     // a valid dirent, compare the name
-    TODO();
+    if(strcmp(name, dirent.name) == 0){
+      inode_t *inode_ret = iget(dirent.inode);
+      if(off != NULL) memcpy(off, &i, sizeof(i));
+      return inode_ret;
+    }
   }
   // not found
   if (type == TYPE_NONE) return NULL;
   // need to create the file, first alloc inode, then init dirent, write it to parent
   // if you create a dir, remember to init it's . and ..
-  TODO();
+  // TODO();
+  uint32_t inode_no = dialloc(type);
+  inode_t *inode_ret = iget(inode_no);
+  if(type == TYPE_DIR) idirinit(inode_ret, parent);
+  dirent_t dirent_tmp;
+  dirent_tmp.inode = inode_no;
+  memcpy(&dirent_tmp.name, name, strlen(name));
+  iwrite(parent, empty, &dirent_tmp, sizeof dirent_tmp);
+  if(off != NULL) memcpy(off, &empty, sizeof(empty));
+  return inode_ret;
 }
 
+// 打开path路径指向的文件所在的目录，然后将文件名（即path的最后一部分）记录在name中
 static inode_t *iopen_parent(const char *path, char *name) {
   // Lab3-2: open the parent dir of path, store the basename to name
   // if no such parent, return NULL
@@ -324,61 +387,242 @@ static inode_t *iopen_parent(const char *path, char *name) {
   return NULL;
 }
 
+// 打开path路径指向的文件本身
 inode_t *iopen(const char *path, int type) {
   // Lab3-2: if file exist, open and return it
   // if file not exist and type==TYPE_NONE, return NULL
   // if file not exist and type!=TYPE_NONE, create the file as type
   char name[MAX_NAME + 1];
-  if (skipelem(path, name) == NULL) {
+  if (skipelem(path, name) == NULL) { 
     // no parent dir for path, path is "" or "/"
     // "" is an invalid path, "/" is root dir
     return path[0] == '/' ? iget(sb.root) : NULL;
   }
   // path do have parent, use iopen_parent and ilookup to open it
   // remember to close the parent inode after you ilookup it
-  TODO();
+  // TODO();
+  inode_t *parent_inode = iopen_parent(path, name);
+  if(parent_inode == NULL) return NULL;
+  inode_t *inode_ret = ilookup(parent_inode, name, NULL, type);
+  iclose(parent_inode);
+  return inode_ret;
 }
 
+// 返回inode对应的文件数据使用的第no个逻辑块的编号，如果不存在这个逻辑块，就申请一个
 static uint32_t iwalk(inode_t *inode, uint32_t no) {
   // return the blkno of the file's data's no th block, if no, alloc it
   if (no < NDIRECT) {
     // direct address
-    TODO();
+    // TODO();
+    if(inode->dinode.addrs[no] == 0){
+      inode->dinode.addrs[no] = balloc();
+      iupdate(inode);
+    }
+    return inode->dinode.addrs[no];
   }
   no -= NDIRECT;
   if (no < NINDIRECT) {
     // indirect address
-    TODO();
+    // TODO();
+    if(inode->dinode.addrs[NDIRECT] == 0){
+      inode->dinode.addrs[NDIRECT] = balloc();
+      iupdate(inode);
+    }
+    uint32_t blk_no;
+    bread(&blk_no, sizeof(uint32_t), inode->dinode.addrs[NDIRECT], no);
+    if(blk_no == 0) blk_no = balloc();
+    bwrite(&blk_no, sizeof(uint32_t), inode->dinode.addrs[NDIRECT], no);
+    return blk_no;
   }
   assert(0); // file too big, not need to handle this case
 }
 
+// 从inode代表的文件的off偏移量处，读取len字节到内存的buf里，返回读取的字节数（或-1如果失败）
 int iread(inode_t *inode, uint32_t off, void *buf, uint32_t len) {
   // Lab3-2: read the inode's data [off, MIN(off+len, size)) to buf
   // use iwalk to get the blkno and read blk by blk
-  TODO();
+  // TODO();
+
+  uint32_t max_blk = inode->dinode.size / BLK_SIZE; // 文件的最后一个逻辑块
+  uint32_t max_off = inode->dinode.size % BLK_SIZE; // 文件最后一个逻辑块的最大off
+
+  uint32_t len_tmp = len;
+  uint32_t ret = 0;
+
+  uint32_t blk_start = off / BLK_SIZE; // 开始读取的第一个逻辑块
+  if(blk_start > max_blk) return 0;
+
+  uint32_t blk_no = iwalk(inode, blk_start); // 开始读取的第一个逻辑块编号
+  uint32_t off_start = off % BLK_SIZE; // 读取第一个逻辑块的off
+
+  if(blk_start == max_blk){
+    if(off_start >= max_off) return 0;
+    ret = (off_start + len_tmp >= max_off) ? max_off - off_start : len_tmp;
+    bread(buf, ret, blk_no, off_start);
+    return ret;
+  }
+
+  uint32_t empty = BLK_SIZE - off_start; // 第一个逻辑块剩下的可读大小
+
+  if(empty >= len_tmp){
+    ret = len_tmp;
+    bread(buf, ret, blk_no, off_start);
+    return ret;
+  }
+
+  len_tmp -= empty;
+
+  while(len_tmp != 0){
+    blk_start++;
+    blk_no = iwalk(inode, blk_start);
+
+    if(blk_start == max_blk){
+      uint32_t tmp = (len_tmp >= max_off) ? max_off : len_tmp;
+      bread(buf + ret, tmp, blk_no, 0);
+      ret += tmp;
+      return ret;
+    }
+
+    if(len_tmp >= BLK_SIZE){
+      len_tmp -= BLK_SIZE;
+      bread(buf + ret, BLK_SIZE, blk_no, 0);
+      ret += BLK_SIZE;
+    }
+    else{
+      bread(buf + ret, len_tmp, blk_no, 0);
+      ret += len_tmp;
+      return ret;
+    }
+  }
+  return ret;
 }
 
+/* 从内存的buf里，写len字节到inode代表的文件的off偏移量处，返回写入的字节数（或-1如果失败) 
+允许off+len超过写之前文件的大小，此时会更新文件新大小为off+len */
 int iwrite(inode_t *inode, uint32_t off, const void *buf, uint32_t len) {
   // Lab3-2: write buf to the inode's data [off, off+len)
   // if off>size, return -1 (can not cross size before write)
   // if off+len>size, update it as new size (but can cross size after write)
   // use iwalk to get the blkno and read blk by blk
-  TODO();
+  // TODO();
+  uint32_t max_blk = inode->dinode.size / BLK_SIZE; // 文件的最后一个逻辑块
+  uint32_t max_off = inode->dinode.size % BLK_SIZE; // 文件最后一个逻辑块的最大off
+
+  uint32_t blk_start = off / BLK_SIZE; // 开始写入的第一个逻辑块
+  if(blk_start > max_blk){ // 如果不够，添加空块
+    uint32_t add_blk = blk_start - max_blk;
+    inode->dinode.size += (BLK_SIZE - max_off);
+    iupdate(inode);
+    while(add_blk != 0){
+      iwalk(inode, max_blk + 1);
+      if(add_blk == 1){
+        max_blk = blk_start;
+        max_off = 0;
+        break;
+      }
+      inode->dinode.size += BLK_SIZE;
+      iupdate(inode);
+      max_off = 0;
+      max_blk += 1;
+      add_blk--;
+    }
+  }
+
+  uint32_t blk_no = iwalk(inode, blk_start); // 开始写入的第一个逻辑块编号
+  uint32_t off_start = off % BLK_SIZE; // 写入的第一个逻辑块的off
+  uint32_t len_tmp = len;
+  uint32_t ret = 0;
+  
+  if(blk_start == max_blk){ // 特判写最后一块的情况
+    if(max_off > off_start + len){
+      bwrite(buf, len, blk_no, off_start);
+      return len;
+    }
+    if(off_start + len <= BLK_SIZE){
+      bwrite(buf, len, blk_no, off_start);
+      inode->dinode.size += (off_start + len - max_off);
+      iupdate(inode);
+      return len;
+    }
+    bwrite(buf, BLK_SIZE - off_start, blk_no, off_start);
+    inode->dinode.size += (BLK_SIZE - max_off);
+    iupdate(inode);
+    len_tmp -= (BLK_SIZE - off_start);
+    ret += BLK_SIZE - off_start;
+    max_blk++;
+    iwalk(inode, max_blk);
+    max_off = 0;
+  }
+
+  if((off_start + len) <= BLK_SIZE){
+    bwrite(buf, len, blk_no, off_start);
+    return len;
+  }
+  len_tmp -= (BLK_SIZE - off_start);
+  ret += BLK_SIZE - off_start;
+
+  while(len_tmp != 0){
+    blk_start++;
+    blk_no = iwalk(inode, blk_start);
+
+    if(blk_start == max_blk){
+      if(max_off > len_tmp){
+        bwrite(buf + ret, len_tmp, blk_no, 0);
+        ret += len_tmp;
+        return ret;
+      }
+      if(len_tmp <= BLK_SIZE){
+        bwrite(buf + ret, len_tmp, blk_no, 0);
+        inode->dinode.size += (len_tmp - max_off);
+        iupdate(inode);
+        ret += len_tmp;
+        return ret;
+      }
+      bwrite(buf + ret, BLK_SIZE, blk_no, 0);
+      inode->dinode.size += (BLK_SIZE - max_off);
+      iupdate(inode);
+      len_tmp -= BLK_SIZE;
+      ret += BLK_SIZE;
+      max_blk++;
+      iwalk(inode, max_blk);
+      max_off = 0;
+      continue;
+    }
+
+    if(len_tmp <= BLK_SIZE){
+      bwrite(buf + ret, len_tmp, blk_no, 0);
+      ret += len_tmp;
+      return ret;
+    }
+    len_tmp -= BLK_SIZE;
+    bwrite(buf + ret, BLK_SIZE, blk_no, 0);
+    ret += BLK_SIZE;
+  }
+  return ret;
 }
 
+// 清空inode代表的文件的所有数据
 void itrunc(inode_t *inode) {
   // Lab3-2: free all data block used by inode (direct and indirect)
   // mark all address of inode 0 and mark its size 0
-  TODO();
+  // TODO();
+  uint32_t blk_num = inode->dinode.size / BLK_SIZE;
+  for(int i = 0; i <= blk_num; i++){
+    bfree(iwalk(inode, i));
+    inode->dinode.addrs[i] = 0;
+  }
+  inode->dinode.size = 0;
+  iupdate(inode);
 }
 
+// 自增inode的引用计数并返回自身
 inode_t *idup(inode_t *inode) {
   assert(inode);
   inode->ref += 1;
   return inode;
 }
 
+// 自减inode的引用计数，如果为0且设置了del，清空该文件的内容并回收磁盘inode（删除文件）
 void iclose(inode_t *inode) {
   assert(inode);
   if (inode->ref == 1 && inode->del) {
@@ -388,22 +632,27 @@ void iclose(inode_t *inode) {
   inode->ref -= 1;
 }
 
+// 返回inode代表的文件的大小
 uint32_t isize(inode_t *inode) {
   return inode->dinode.size;
 }
 
+// 返回inode代表的文件的类型
 int itype(inode_t *inode) {
   return inode->dinode.type;
 }
 
+// 返回inode代表的文件的inode标号
 uint32_t ino(inode_t *inode) {
   return inode->no;
 }
 
+// 如果inode代表的文件是设备文件，返回其设备号，否则返回-1
 int idevid(inode_t *inode) {
   return itype(inode) == TYPE_DEV ? inode->dinode.device : -1;
 }
 
+// 向文件系统中注册一个设备，名字为name，设备号为id
 void iadddev(const char *name, int id) {
   inode_t *ip = iopen(name, TYPE_DEV);
   assert(ip);
@@ -412,14 +661,23 @@ void iadddev(const char *name, int id) {
   iclose(ip);
 }
 
+// 监测目录是否为空，要求inode必须是一个目录
 static int idirempty(inode_t *inode) {
   // Lab3-2: return whether the dir of inode is empty
   // the first two dirent of dir must be . and ..
   // you just need to check whether other dirent are all invalid
   assert(inode->dinode.type == TYPE_DIR);
-  TODO();
+  // TODO();
+  dirent_t dirent;
+  uint32_t size = inode->dinode.size;
+  for(uint32_t i = 2 * (sizeof dirent); i < size; i += sizeof dirent){
+    iread(inode, i, &dirent, sizeof dirent);
+    if(dirent.inode != 0) return 0; // 非空
+  }
+  return 1; // 空
 }
 
+// 删除path路径指向的文件，成功返回0，失败返回-1
 int iremove(const char *path) {
   // Lab3-2: remove the file, return 0 on success, otherwise -1
   // first open its parent, if no parent, return -1
@@ -428,7 +686,30 @@ int iremove(const char *path) {
   // . and .. cannot be remove, so check name set by iopen_parent
   // remove a file just need to clean the dirent points to it and set its inode's del
   // the real remove will be done at iclose, after everyone close it
-  TODO();
+  // TODO();
+  char name[MAX_NAME + 1];
+  inode_t *parent_inode = iopen_parent(path, name);
+  if(parent_inode == NULL) return -1;
+  if((strcmp(".", name) == 0) || (strcmp("..", name) == 0)){
+    iclose(parent_inode);
+    return -1;
+  }
+  uint32_t off = 0;
+  inode_t *file_inode = ilookup(parent_inode, name, &off, TYPE_NONE);
+  if(file_inode == NULL) return -1;
+  if(file_inode->dinode.type == TYPE_DIR){
+    if(idirempty(file_inode) == 0){
+      iclose(parent_inode);
+      iclose(file_inode);
+      return -1;
+    }
+  }
+  file_inode->del = 1;
+  dirent_t dirent;
+  memset(&dirent, 0, sizeof dirent);
+  iwrite(parent_inode, off, &dirent, sizeof dirent);
+  iclose(parent_inode); // not sure
+  return 0;
 }
 
 #endif
