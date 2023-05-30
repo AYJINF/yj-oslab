@@ -207,6 +207,9 @@ void vm_map(PD *pgdir, size_t va, size_t len, int prot) {
   assert(start >= PHY_MEM);
   assert(end >= start);
   // TODO(); // not sure 
+
+  // Log("wm_map va=%x, len=%x\n", va, len); 
+
   while(start < end){
     PTE *pte = vm_walkpte(pgdir, start, prot);
     // Log("----------------------------------vm_map pte=%x\n", pte);

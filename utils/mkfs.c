@@ -118,6 +118,7 @@ int main(int argc, char *argv[]) {
   assert(img != (void*)-1);
   init_disk();
   for (int i = 2; i < argc; ++i) {
+    // printf("mkfs name=%s\n", argv[i]);
     add_file(argv[i]);
   }
   munmap(img, IMG_SIZE);
@@ -192,33 +193,39 @@ blk_t *iwalk(dinode_t *file, uint32_t blk_no) {
 void iappend(dinode_t *file, const void *buf, uint32_t size) {
   // append buf to file's data, remember to add file->size
   // you can append block by block
+  // printf("iappend size=%d\n", file->size);
+
   uint32_t size_tmp = size;
   uint32_t blk_no = file->size / BLK_SIZE; // 第一个写入的逻辑块下标
   uint32_t byte_start = file->size % BLK_SIZE; // 首先写入的字节位置
   blk_t *blk_start = iwalk(file, blk_no); // 第一个写入的逻辑块地址
+  // printf("mkfs iwalk=%p\n", (void *)blk_start);
 
   if(size_tmp >= BLK_SIZE - byte_start){
-    memcpy(&(blk_start->u32buf[byte_start]), buf, BLK_SIZE - byte_start);
+    memcpy(&(blk_start->u8buf[byte_start]), buf, BLK_SIZE - byte_start);
     size_tmp -= (BLK_SIZE - byte_start);
     file->size += BLK_SIZE - byte_start;
 
     while(size_tmp != 0){
       blk_no++;
       blk_t *blk_tmp = iwalk(file, blk_no);
+
+      // printf("mkfs iwalk=%p\n", (void *)blk_tmp);
+
       if(size_tmp >= BLK_SIZE){
-        memcpy(&(blk_tmp->u32buf[0]), buf + (size - size_tmp), BLK_SIZE);
+        memcpy(&(blk_tmp->u8buf[0]), (char *)buf + (size - size_tmp), BLK_SIZE);
         size_tmp -= BLK_SIZE;
         file->size += BLK_SIZE;
       }
       else{
-        memcpy(&(blk_tmp->u32buf[0]), buf + (size - size_tmp), size_tmp); // not sure
+        memcpy(&(blk_tmp->u8buf[0]), (char *)buf + (size - size_tmp), size_tmp); // not sure
         file->size += size_tmp;
-        break;
+        size_tmp = 0;
       }
     }
   }
   else{
-    memcpy(&(blk_start->u32buf[byte_start]), buf, size_tmp);
+    memcpy(&(blk_start->u8buf[byte_start]), buf, size_tmp);
     file->size += size_tmp;
   }
 }
@@ -234,14 +241,18 @@ void add_file(char *path) {
   dirent_t dirent;
   dirent.inode = inode_blk; // not sure
   strcpy(dirent.name, basename(path));
+
   iappend(root, &dirent, sizeof dirent);
   // write the file's data, first read it to buf then call iappend
   // TODO();
+
   while(!feof(fp)){
     memset(buf, 0, sizeof(buf));
-    size_t t = fread(buf, sizeof(uint8_t), sizeof(buf), fp);
+    size_t t = fread(buf, 1, BLK_SIZE, fp);
+    // printf("mkfs path=%s, while inode size=%d\n", dirent.name, inode->size);
+    iappend(inode, buf, t); // not sure
+    // printf("buf = %s\n", buf);
     if( t != sizeof(buf)) break;
-    iappend(inode, buf, BLK_SIZE); // not sure
   }
   fclose(fp);
 }

@@ -142,7 +142,8 @@ getcmd(char *buf, int nbuf)
 
 int
 main(void)
-{
+{ 
+  // printf("zzzzzzzzzzzzzzzzzz\n");
   assert(open("/dev/serial", O_RDWR) == 0);
   assert(dup(0) == 1);
   assert(dup(0) == 2);

@@ -108,6 +108,9 @@ void irq_handle(Context *ctx) {
     // just ignore me now, usage is in Lab1-6
     exception_debug_handler(ctx);
   }
+
+  // Log("ctx->irq=%d, ctx->ebp=%x, ctx->eip=%x\n", ctx->irq, ctx->ebp, ctx->eip);
+
   switch (ctx->irq) {
   // TODO: Lab1-5 handle pagefault and syscall
   // TODO: Lab1-7 handle serial and timer

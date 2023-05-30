@@ -10,6 +10,7 @@ uint32_t load_elf(PD *pgdir, const char *name) {
   Elf32_Ehdr elf;
   Elf32_Phdr ph;
   inode_t *inode = iopen(name, TYPE_NONE);
+  // Log("name=%s, inode=%x\n", name, inode);
   if (!inode) return -1;
   iread(inode, 0, &elf, sizeof(elf));
   if (*(uint32_t*)(&elf) != 0x464c457f) { // check ELF magic number
@@ -39,6 +40,9 @@ uint32_t load_elf(PD *pgdir, const char *name) {
   // TODO: Lab1-4 alloc stack memory in pgdir
   vm_map(pgdir, USR_MEM - PGSIZE, PGSIZE, 7);
   iclose(inode);
+
+  // Log("elf.e_entry=%x\n", elf.e_entry);
+
   return elf.e_entry;
 }
 
@@ -57,6 +61,7 @@ uint32_t load_arg(PD *pgdir, char *const argv[]) {
 
     stack_top -= (len + 1);
     strcpy(stack_top, argv[argc]);
+    // Log("ooooooooooooooooooooooooooo=%s\n", argv[argc]);
     argv_va[argc] = USR_MEM-PGSIZE + ADDR2OFF(stack_top); // not sure
   }
   argv_va[argc] = 0; // set last argv NULL

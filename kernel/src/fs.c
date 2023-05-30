@@ -168,6 +168,7 @@ static uint32_t dialloc(int type) {
   // note that first (0th) inode always unused, because dirent's inode 0 mark invalid
   dinode_t dinode;
   for (uint32_t i = 1; i < sb.inum; ++i) {
+    memset(&dinode, 0, sizeof dinode);
     diread(&dinode, i);
     // TODO();
     if(dinode.type == TYPE_NONE){
@@ -191,7 +192,7 @@ static uint32_t balloc() {
   // Lab3-2: iterate bitmap, find one free block
   // set the bit, clean the blk (can call bzero) and return its no
   // if no free block, just abort
-  uint32_t byte;
+  uint32_t byte = 0;
   for (int i = 0; i < BLK_NUM / 32; ++i) {
     bread(&byte, 4, sb.bitmap, i * 4);
 
@@ -216,13 +217,14 @@ static void bfree(uint32_t blkno) {
   // Lab3-2: clean the bit of blkno in bitmap
   assert(blkno >= 64); // cannot free first 64 block
   // TODO();
-  uint8_t byte;
+  uint8_t byte = 0;
   bread(&byte, 1, sb.bitmap, blkno / 8);
-  int t = blkno % 8;
-  int tt = 1;
-  for(int i = 0; i < t; i++) tt *= 2;
-  byte |= tt;
+  uint8_t t = blkno % 8;
+  uint8_t tt = 1;
+  for(uint8_t i = 0; i < t; i++) tt *= 2;
+  byte &= (~tt);
   bwrite(&byte, 1, sb.bitmap, blkno / 8); // not sure
+  bzero(blkno);
 }
 
 #define INODE_NUM 128
@@ -235,18 +237,18 @@ static inode_t *iget(uint32_t no) {
   // otherwise, find a empty inode slot, init it and return it
   // if no empty inode slot, just abort
   // TODO();
-  for(int i = 1; i < INODE_NUM; i++){
+  for(int i = 0; i < INODE_NUM; i++){
     if(inodes[i].no == no){
       inodes[i].ref++; // not sure
       return &inodes[i];
     }
   }
-  for(int i = 1; i < INODE_NUM; i++){
+  for(int i = 0; i < INODE_NUM; i++){  // waiting to be perfected
     if(inodes[i].ref == 0){
       inodes[i].no = no;
       inodes[i].ref = 1;
       inodes[i].del = 0;
-      diread(&inodes[i].dinode, no);
+      diread(&(inodes[i].dinode), no);
       return &inodes[i];
     }
   }
@@ -300,6 +302,7 @@ static void idirinit(inode_t *inode, inode_t *parent) {
   assert(parent->dinode.type == TYPE_DIR); // both should be dir
   assert(inode->dinode.size == 0); // inode shoule be empty
   dirent_t dirent;
+  memset(&dirent, 0, sizeof dirent);
   // set .
   dirent.inode = inode->no;
   strcpy(dirent.name, ".");
@@ -318,9 +321,11 @@ static inode_t *ilookup(inode_t *parent, const char *name, uint32_t *off, int ty
   // if no such file and type != TYPE_NONE, create the file with the type
   assert(parent->dinode.type == TYPE_DIR); // parent must be a dir
   dirent_t dirent;
+  memset(&dirent, 0, sizeof dirent);
   uint32_t size = parent->dinode.size, empty = size;
   for (uint32_t i = 0; i < size; i += sizeof dirent) {
     // directory is a file containing a sequence of dirent structures
+    memset(&dirent, 0, sizeof dirent);
     iread(parent, i, &dirent, sizeof dirent);
     if (dirent.inode == 0) {
       // a invalid dirent, record the offset (used in create file), then skip
@@ -328,7 +333,9 @@ static inode_t *ilookup(inode_t *parent, const char *name, uint32_t *off, int ty
       continue;
     }
     // a valid dirent, compare the name
-    if(strcmp(name, dirent.name) == 0){
+    // if(dirent.name[0] == 's')
+      // Log("strlen=%u, dirent.name=%s\n", strlen(dirent.name), dirent.name);
+    else if(strcmp(name, dirent.name) == 0){
       inode_t *inode_ret = iget(dirent.inode);
       if(off != NULL) memcpy(off, &i, sizeof(i));
       return inode_ret;
@@ -339,10 +346,15 @@ static inode_t *ilookup(inode_t *parent, const char *name, uint32_t *off, int ty
   // need to create the file, first alloc inode, then init dirent, write it to parent
   // if you create a dir, remember to init it's . and ..
   // TODO();
+
+  // Log("new name=%s\n", name);
+
   uint32_t inode_no = dialloc(type);
   inode_t *inode_ret = iget(inode_no);
   if(type == TYPE_DIR) idirinit(inode_ret, parent);
+
   dirent_t dirent_tmp;
+  memset(&dirent_tmp, 0, sizeof dirent_tmp);
   dirent_tmp.inode = inode_no;
   memcpy(&dirent_tmp.name, name, strlen(name));
   iwrite(parent, empty, &dirent_tmp, sizeof dirent_tmp);
@@ -356,6 +368,7 @@ static inode_t *iopen_parent(const char *path, char *name) {
   // if no such parent, return NULL
   inode_t *ip, *next;
   // set search starting inode
+
   if (path[0] == '/') {
     ip = iget(sb.root);
   } else {
@@ -392,6 +405,7 @@ inode_t *iopen(const char *path, int type) {
   // Lab3-2: if file exist, open and return it
   // if file not exist and type==TYPE_NONE, return NULL
   // if file not exist and type!=TYPE_NONE, create the file as type
+  // printf("path=%s\n", path);
   char name[MAX_NAME + 1];
   if (skipelem(path, name) == NULL) { 
     // no parent dir for path, path is "" or "/"
@@ -401,9 +415,18 @@ inode_t *iopen(const char *path, int type) {
   // path do have parent, use iopen_parent and ilookup to open it
   // remember to close the parent inode after you ilookup it
   // TODO();
+  memset(name, 0, MAX_NAME + 1);
   inode_t *parent_inode = iopen_parent(path, name);
   if(parent_inode == NULL) return NULL;
   inode_t *inode_ret = ilookup(parent_inode, name, NULL, type);
+
+  if(inode_ret == NULL){
+    iclose(parent_inode);
+    return NULL;
+  }
+
+  // Log("iopen name=%s, size=%d\n", name, inode_ret->dinode.size);
+
   iclose(parent_inode);
   return inode_ret;
 }
@@ -418,6 +441,9 @@ static uint32_t iwalk(inode_t *inode, uint32_t no) {
       inode->dinode.addrs[no] = balloc();
       iupdate(inode);
     }
+
+    // Log("ret=%u\n", inode->dinode.addrs[no]);
+
     return inode->dinode.addrs[no];
   }
   no -= NDIRECT;
@@ -429,9 +455,14 @@ static uint32_t iwalk(inode_t *inode, uint32_t no) {
       iupdate(inode);
     }
     uint32_t blk_no;
-    bread(&blk_no, sizeof(uint32_t), inode->dinode.addrs[NDIRECT], no);
-    if(blk_no == 0) blk_no = balloc();
-    bwrite(&blk_no, sizeof(uint32_t), inode->dinode.addrs[NDIRECT], no);
+    bread(&blk_no, sizeof(uint32_t), inode->dinode.addrs[NDIRECT], no * 4);
+    if(blk_no == 0) {
+      blk_no = balloc();
+      bwrite(&blk_no, sizeof(uint32_t), inode->dinode.addrs[NDIRECT], no * 4);
+    }
+
+    // Log("ret=%u\n", blk_no);
+
     return blk_no;
   }
   assert(0); // file too big, not need to handle this case
@@ -442,12 +473,12 @@ int iread(inode_t *inode, uint32_t off, void *buf, uint32_t len) {
   // Lab3-2: read the inode's data [off, MIN(off+len, size)) to buf
   // use iwalk to get the blkno and read blk by blk
   // TODO();
-
+  // Log("iread off=%d, size=%d\n", off, inode->dinode.size);
   uint32_t max_blk = inode->dinode.size / BLK_SIZE; // 文件的最后一个逻辑块
   uint32_t max_off = inode->dinode.size % BLK_SIZE; // 文件最后一个逻辑块的最大off
 
   uint32_t len_tmp = len;
-  uint32_t ret = 0;
+  int ret = 0;
 
   uint32_t blk_start = off / BLK_SIZE; // 开始读取的第一个逻辑块
   if(blk_start > max_blk) return 0;
@@ -462,22 +493,24 @@ int iread(inode_t *inode, uint32_t off, void *buf, uint32_t len) {
     return ret;
   }
 
-  uint32_t empty = BLK_SIZE - off_start; // 第一个逻辑块剩下的可读大小
+  int empty = BLK_SIZE - off_start; // 第一个逻辑块剩下的可读大小
 
   if(empty >= len_tmp){
-    ret = len_tmp;
+    ret += len_tmp;
     bread(buf, ret, blk_no, off_start);
     return ret;
   }
 
   len_tmp -= empty;
+  ret += empty;
+  bread(buf, ret, blk_no, off_start);
 
   while(len_tmp != 0){
     blk_start++;
     blk_no = iwalk(inode, blk_start);
 
     if(blk_start == max_blk){
-      uint32_t tmp = (len_tmp >= max_off) ? max_off : len_tmp;
+      int tmp = (len_tmp >= max_off) ? max_off : len_tmp;
       bread(buf + ret, tmp, blk_no, 0);
       ret += tmp;
       return ret;
@@ -509,35 +542,24 @@ int iwrite(inode_t *inode, uint32_t off, const void *buf, uint32_t len) {
   uint32_t max_off = inode->dinode.size % BLK_SIZE; // 文件最后一个逻辑块的最大off
 
   uint32_t blk_start = off / BLK_SIZE; // 开始写入的第一个逻辑块
-  if(blk_start > max_blk){ // 如果不够，添加空块
-    uint32_t add_blk = blk_start - max_blk;
-    inode->dinode.size += (BLK_SIZE - max_off);
-    iupdate(inode);
-    while(add_blk != 0){
-      iwalk(inode, max_blk + 1);
-      if(add_blk == 1){
-        max_blk = blk_start;
-        max_off = 0;
-        break;
-      }
-      inode->dinode.size += BLK_SIZE;
-      iupdate(inode);
-      max_off = 0;
-      max_blk += 1;
-      add_blk--;
-    }
+
+  if(blk_start > max_blk){ // 不处理写的范围的开头off超过文件的大小的情况
+    assert(0);
+    return -1;
   }
 
   uint32_t blk_no = iwalk(inode, blk_start); // 开始写入的第一个逻辑块编号
   uint32_t off_start = off % BLK_SIZE; // 写入的第一个逻辑块的off
   uint32_t len_tmp = len;
-  uint32_t ret = 0;
+  int ret = 0;
   
   if(blk_start == max_blk){ // 特判写最后一块的情况
+
     if(max_off > off_start + len){
       bwrite(buf, len, blk_no, off_start);
       return len;
     }
+
     if(off_start + len <= BLK_SIZE){
       bwrite(buf, len, blk_no, off_start);
       inode->dinode.size += (off_start + len - max_off);
@@ -548,18 +570,21 @@ int iwrite(inode_t *inode, uint32_t off, const void *buf, uint32_t len) {
     inode->dinode.size += (BLK_SIZE - max_off);
     iupdate(inode);
     len_tmp -= (BLK_SIZE - off_start);
-    ret += BLK_SIZE - off_start;
+    ret += (BLK_SIZE - off_start);
     max_blk++;
     iwalk(inode, max_blk);
     max_off = 0;
   }
 
-  if((off_start + len) <= BLK_SIZE){
-    bwrite(buf, len, blk_no, off_start);
-    return len;
+  else{
+    if((off_start + len_tmp) <= BLK_SIZE){
+      bwrite(buf, len_tmp, blk_no, off_start);
+      return len;
+    }
+    len_tmp -= (BLK_SIZE - off_start);
+    ret += (BLK_SIZE - off_start);
+    bwrite(buf, ret, blk_no, off_start);
   }
-  len_tmp -= (BLK_SIZE - off_start);
-  ret += BLK_SIZE - off_start;
 
   while(len_tmp != 0){
     blk_start++;
@@ -589,16 +614,18 @@ int iwrite(inode_t *inode, uint32_t off, const void *buf, uint32_t len) {
       continue;
     }
 
-    if(len_tmp <= BLK_SIZE){
-      bwrite(buf + ret, len_tmp, blk_no, 0);
-      ret += len_tmp;
-      return ret;
+    else{
+      if(len_tmp <= BLK_SIZE){
+        bwrite(buf + ret, len_tmp, blk_no, 0);
+        ret += len_tmp;
+        return ret;
+      }
+      len_tmp -= BLK_SIZE;
+      bwrite(buf + ret, BLK_SIZE, blk_no, 0);
+      ret += BLK_SIZE;
     }
-    len_tmp -= BLK_SIZE;
-    bwrite(buf + ret, BLK_SIZE, blk_no, 0);
-    ret += BLK_SIZE;
   }
-  return ret;
+  return len;
 }
 
 // 清空inode代表的文件的所有数据
@@ -608,8 +635,22 @@ void itrunc(inode_t *inode) {
   // TODO();
   uint32_t blk_num = inode->dinode.size / BLK_SIZE;
   for(int i = 0; i <= blk_num; i++){
+
+    // Log("blk_no=%u\n", iwalk(inode, i));
+
     bfree(iwalk(inode, i));
+  }
+
+  if(inode->dinode.addrs[NDIRECT] != 0){
+
+    // Log("blk_no=%u\n", inode->dinode.addrs[NDIRECT]);
+
+    bfree(inode->dinode.addrs[NDIRECT]);
+  }
+
+  for(int i = 0; i < NDIRECT + 1; i++){
     inode->dinode.addrs[i] = 0;
+    iupdate(inode); // waiting to be perfected
   }
   inode->dinode.size = 0;
   iupdate(inode);
@@ -669,8 +710,10 @@ static int idirempty(inode_t *inode) {
   assert(inode->dinode.type == TYPE_DIR);
   // TODO();
   dirent_t dirent;
+  memset(&dirent, 0, sizeof dirent);
   uint32_t size = inode->dinode.size;
   for(uint32_t i = 2 * (sizeof dirent); i < size; i += sizeof dirent){
+    memset(&dirent, 0, sizeof dirent);
     iread(inode, i, &dirent, sizeof dirent);
     if(dirent.inode != 0) return 0; // 非空
   }
@@ -688,6 +731,7 @@ int iremove(const char *path) {
   // the real remove will be done at iclose, after everyone close it
   // TODO();
   char name[MAX_NAME + 1];
+  memset(name, 0, MAX_NAME + 1);
   inode_t *parent_inode = iopen_parent(path, name);
   if(parent_inode == NULL) return -1;
   if((strcmp(".", name) == 0) || (strcmp("..", name) == 0)){
@@ -696,14 +740,19 @@ int iremove(const char *path) {
   }
   uint32_t off = 0;
   inode_t *file_inode = ilookup(parent_inode, name, &off, TYPE_NONE);
-  if(file_inode == NULL) return -1;
-  if(file_inode->dinode.type == TYPE_DIR){
-    if(idirempty(file_inode) == 0){
+  if(file_inode == NULL){
+    iclose(parent_inode);
+    return -1;
+  }
+
+  if(itype(file_inode) == TYPE_DIR){
+    if(idirempty(file_inode) == 0){ // 非空
       iclose(parent_inode);
       iclose(file_inode);
       return -1;
     }
   }
+  
   file_inode->del = 1;
   dirent_t dirent;
   memset(&dirent, 0, sizeof dirent);

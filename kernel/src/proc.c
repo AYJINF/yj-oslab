@@ -23,6 +23,8 @@ void init_proc() {
     curr->usems[i] = NULL;
   }
   // Lab3-2, set cwd
+  inode_t *pcb_cwd = iopen("/", TYPE_NONE);
+  pcb[0].cwd = pcb_cwd;
 }
 
 proc_t *proc_alloc() {
@@ -52,6 +54,8 @@ proc_t *proc_alloc() {
       for(int k = 0; k < MAX_UFILE; k++){
         free_pcb->files[k] = NULL;
       }
+      //lab 3-2-4
+      free_pcb->cwd = NULL;
       break;
     }
   }
@@ -109,6 +113,8 @@ void proc_copycurr(proc_t *proc) {
   proc->kstack->ctx.eax = 0;
   proc->parent = proc_cur;
   proc_cur->child_num++;
+  //lab 3-2-4
+  proc->cwd = idup(proc_cur->cwd); // not sure 
 
   for(int i = 0; i < MAX_USEM; i++){
     proc->usems[i] = proc_cur->usems[i];
@@ -154,6 +160,7 @@ void proc_makezombie(proc_t *proc, int exitcode) {
       tmp_pcb->parent = NULL;
     }
   }
+  iclose(proc->cwd);
 }
 
 // 遍历pcb找一个proc的子僵尸进程，如果不存在就返回NULL

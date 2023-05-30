@@ -46,6 +46,7 @@ int sys_read(int fd, void *buf, size_t count) {
   file_t *file = proc_getfile(proc_cur, fd);
   if(file == NULL) return -1;
   int ret = fread(file, buf, count);
+  // Log("rrrrrrrrrrrret=%d\n", ret);
   return ret;
 }
 
@@ -211,6 +212,8 @@ int sys_open(const char *path, int mode) {
   if(fd == -1) return -1;
   file_t *file = fopen(path, mode);
   if(file == NULL) return -1;
+  // Log("----------type=%d\n", file->type);
+  // if(file->type != 3) Log("sys_open size=%d\n", isize(file->inode));
   proc_cur->files[fd] = file;
   return fd;
 }
@@ -253,6 +256,7 @@ int sys_fstat(int fd, struct stat *st) {
   // TODO(); // Lab3-1
   proc_t *proc_cur = proc_curr();
   file_t *file = proc_getfile(proc_cur, fd);
+  if(file == NULL) return -1;
   int type = file->type;
   if(type == TYPE_FILE || type == TYPE_DIR){
     inode_t *inode = file->inode;
@@ -270,10 +274,23 @@ int sys_fstat(int fd, struct stat *st) {
   return -1;
 }
 
+// 改变当前进程的cwd为path这一路径指向的目录，成功返回0，失败返回-1
 int sys_chdir(const char *path) {
-  TODO(); // Lab3-2
+  // TODO(); // Lab3-2
+  inode_t *file_inode = iopen(path, TYPE_NONE);
+  if(file_inode == NULL) return -1;
+  int type = itype(file_inode);
+  if(type != TYPE_DIR){
+    iclose(file_inode);
+    return -1;
+  }
+  proc_t *proc_cur = proc_curr();
+  iclose(proc_cur->cwd);
+  proc_cur->cwd = file_inode;
+  return 0;
 }
 
+// 删除这个文件
 int sys_unlink(const char *path) {
   return iremove(path);
 }

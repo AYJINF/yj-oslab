@@ -40,11 +40,20 @@ void init_user_and_go() {
 
   proc_t *proc = proc_alloc();
   assert(proc);
+
+
   char *argv[] = {"sh", NULL};
+
   assert(load_user(proc->pgdir, proc->ctx, "sh", argv) == 0);
+  
+  inode_t *proc_cwd = iopen("/", TYPE_NONE);
+  proc->cwd = proc_cwd;
+
   // char *argv[] = {"childtest", "1", "10", "25", NULL};
   // assert(load_user(proc->pgdir, proc->ctx, "childtest", argv) == 0);
   proc_addready(proc);
+
+  
 
   // proc = proc_alloc();
   // assert(proc);
@@ -53,7 +62,7 @@ void init_user_and_go() {
   // proc_addready(proc);
 
   sti();
-  while (1) ;
+  while (1);
 
 
 
